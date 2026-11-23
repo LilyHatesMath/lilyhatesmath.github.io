@@ -474,7 +474,7 @@
 <div id="devicePick">
   <img id="dpLogo" src="assets/faces/logo.webp" alt="重返小球1999">
   <div class="dp-title">选择游玩设备</div>
-  <div class="dp-sub" id="dpLoading">正在载入游戏资源…（约 17 MB，首次打开需十几秒）</div>
+  <div class="dp-sub" id="dpLoading">正在载入游戏资源…（首次打开约 2 MB，之后有缓存会更快）</div>
   <div class="dp-row">
     <button class="dp-btn" type="button" data-device="pc" onclick="window.__pickDevice&&window.__pickDevice('pc')">电脑端<small>宽屏大视界，适配电脑</small></button>
     <button class="dp-btn" type="button" data-device="mobile" onclick="window.__pickDevice&&window.__pickDevice('mobile')">移动端<small>单列大按钮，适配手机</small></button>
@@ -733,7 +733,66 @@ corner3:'assets/se/corner3.mp3',
   lilya2:'assets/se/lilya2.mp3'
 };
 const SE={};
-for(const k in SE_SRC){ const a=new Audio(SE_SRC[k]); a.preload='auto'; a.volume=0.55; SE[k]=a; }
+for(const k in SE_SRC){ const a=new Audio(SE_SRC[k]); a.preload='none'; a.volume=0.55; SE[k]=a; }
+// ===== 语音按需加载：只预热「本局上场的角色」 =====
+// 以前 93 段语音一进页面就全下载，弱网下要几十秒才齐，技能都放完了语音才响（听起来像没声音）。
+// 现在改成：默认不下载，选人时立刻预热该角色的语音，其余等真正用到再取。
+const VOICE_BY_CHAR={
+  s37:['b37enter'],
+  lilya:['lilya1','lilya2'],
+  sotheby:['sufb1','sufb2'],
+  joe:['Jshield1','Jshield2','Jsword1','Jsword2','Jsword3','Jsword4'],
+  tuesday:['lan1','lan2'],
+  reed:['reed1','reed2','reed3','reed4'],
+  sentinel:['marianna1','marianna2','marianna3'],
+  semmelweis:['semeZhen','semeDash1','semeDash2'],
+  nautika:['nodica1','nodica2'],
+  rubuska:['berry1','berry2','berry3','berry4'],
+  twins:['twin1','twin2'],
+  everecho:['eve1','eve2','eve3'],
+  flutterpage:['paper1','paper2','paper3','paperSky'],
+  matilda:['matilda1','matilda2'],
+  beryl:['beryl1','beryl2'],
+  cornerstone:['corner1','corner2','corner3'],
+  rhiannon:['rhian1'],
+  liangyue:['liang1','qiang1'],
+  regulars:['reg1','reg2','reg3'],
+  ramona:['ramona1','ramona2'],
+  willow:['dudu1','dudu2'],
+  babel:['babel1','babel2'],
+  coppelia:['coppel1','coppel2'],
+  cheng:['fish1','fish2','fish3','fish4'],
+  apple:['apple1','apple2'],
+  ulrich:['ulrich1','ulrich2','ulrich3','ulrich4'],
+  lucy:['luci1','luci2','luci3','luci4','lucilv3'],
+  charon:['charon1','charon2','charon3','charon4'],
+  brume:['gray1','gray2','grayEnd','fare1','fare2'],
+  marcus:['marcus1'],
+  mercuria:['mercuria1','mercuria2','mercuria3'],
+  argus:['argus1','argus2']
+};
+const VOICE_ALWAYS=['enter','train','rail'];   // 通用音效，很小，始终预热
+const VOICE_WARM={};
+function voiceWarm(k){
+  if(VOICE_WARM[k]) return;
+  const a=SE[k];
+  if(!a) return;
+  VOICE_WARM[k]=1;
+  try{ a.preload='auto'; a.load(); }catch(e){}
+}
+window.__voiceWarmChar=function(key){
+  const list=VOICE_BY_CHAR[key];
+  if(list) list.forEach(voiceWarm);
+};
+window.__voiceWarmAll=function(keys){
+  VOICE_ALWAYS.forEach(voiceWarm);
+  (keys||[]).forEach(function(k){ if(k&&k!=='none') window.__voiceWarmChar(k); });
+};
+window.__voiceWarmState=function(){
+  const all=Object.keys(SE);
+  return { 总数:all.length, 已预热:Object.keys(VOICE_WARM).length,
+           已就绪:all.filter(function(k){ return SE[k].readyState>=2; }).length };
+};
 function seAppleBeam(){ sePlay('apple'+(1+Math.floor(Math.random()*2))); }
 function seGrayDrive(){ sePlay('gray'+(1+Math.floor(Math.random()*2))); }
 function seGrayEnd(){ sePlay('grayEnd'); }
@@ -3217,6 +3276,7 @@ function spawnEntry(key,x,y,team){
 function startFight(){
   tipHide();
   ensurePicks();
+  window.__voiceWarmAll&&window.__voiceWarmAll([].concat.apply([],picks));   // 开打前再兜一次
   voiceReset();   // 每局重新允许每条语音播一次
   // 全填【无角色】就没得打了，先拦一下
   // 任一队伍没有除【无角色】以外的角色，就无法开打
@@ -9276,6 +9336,8 @@ function buildSelect(){
   if(!document.getElementById('select').classList.contains('hide')) selScrollSave();
   buildRules();
   ensurePicks();
+  // 每次重建面板都把当前双方已选角色的语音预热一遍（幂等，随机模式也能兜住）
+  window.__voiceWarmAll&&window.__voiceWarmAll([].concat.apply([],picks));
   const wrap=document.getElementById('teams');
   wrap.innerHTML='';
   for(let t=0;t<teamCount;t++){
@@ -9355,6 +9417,7 @@ function buildSelect(){
                 const dup=(key!=='deepfish' && key!=='red' && key!=='none') && picks[t].some((k,i)=>i!==s && k===key);
                 if(dup){ alert('同一队伍里不能重复选择'+ch.name); return; }
                 picks[t][s]=key;
+                window.__voiceWarmChar&&window.__voiceWarmChar(key);   // 选到谁就立刻预热谁的语音
                 selOpen=null;   // 选完就折叠，标签显示在角色位旁边
                 buildSelect();
               });
